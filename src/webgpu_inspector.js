@@ -2579,6 +2579,7 @@ export let webgpuInspector = null;
       const id = texture.__id;
       let format = texture.format;
       let formatInfo = format ? TextureFormatInfo[format] : undefined;
+      let copyMipLevel = mipLevel;
       if (!formatInfo) { // GPUExternalTexture?
         return;
       }
@@ -2596,7 +2597,7 @@ export let webgpuInspector = null;
           // depth24plus texture's can't be copied to a buffer,
           // https://github.com/gpuweb/gpuweb/issues/652,
           // convert it to a float texture.
-          texture = textureUtils.copyDepthTexture(texture, "r32float", commandEncoder);
+          texture = textureUtils.copyDepthTexture(texture, "r32float", commandEncoder, mipLevel);
         } catch (e) {
           this.enableRecording();
           console.log(e);
@@ -2606,6 +2607,7 @@ export let webgpuInspector = null;
         format = texture.format;
         formatInfo = format ? TextureFormatInfo[format] : undefined;
         texture.__id = id;
+        copyMipLevel = 0;
         this._toDestroy.push(texture); // Destroy the temp texture at the end of the frame
       } else if (formatInfo.isDepthStencil && formatInfo.hasStencil) {
         formatInfo = TextureFormatInfo["stencil8"];
@@ -2624,8 +2626,8 @@ export let webgpuInspector = null;
         this.enableRecording();
       }
 
-      const width = (texture.width >> mipLevel) || 1;
-      const height = (texture.height >> mipLevel) || 1;
+      const width = (texture.width >> copyMipLevel) || 1;
+      const height = (texture.height >> copyMipLevel) || 1;
       const depthOrArrayLayers = texture.depthOrArrayLayers || 1;
       const texelByteSize = formatInfo.bytesPerBlock;
       const bytesPerRow = (width * texelByteSize + 255) & ~0xff;
@@ -2664,7 +2666,7 @@ export let webgpuInspector = null;
         const aspect = formatInfo.hasStencil ? "stencil-only" : "all";
 
         commandEncoder.copyTextureToBuffer(
-          { texture, aspect, mipLevel },
+          { texture, aspect, mipLevel: copyMipLevel },
           { buffer: tempBuffer, bytesPerRow, rowsPerImage: copySize.height },
           copySize
         );
