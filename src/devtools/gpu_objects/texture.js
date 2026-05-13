@@ -221,7 +221,8 @@ export class Texture extends GPUObject {
           const value = pixelValue(imageData, offset, "32sint", 1);
           return { r: value[0] };
         }
-        case "depth16unorm": // depth formats get conerted to r32float
+        case "stencil8":
+        case "depth16unorm": // depth and stencil formats get converted to r32float
         case "depth24plus":
         case "depth24plus-stencil8":
         case "depth32float":

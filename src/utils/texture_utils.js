@@ -32,6 +32,12 @@ export class TextureUtils {
         minFilter: 'nearest',
     });
 
+    this.depthCompareSampler = device.createSampler({
+        compare: 'less-equal',
+        magFilter: 'nearest',
+        minFilter: 'nearest',
+    });
+
     this.displayUniformBuffer = device.createBuffer({
       size: 4 * 8,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
@@ -111,7 +117,7 @@ export class TextureUtils {
     const width = src.width;
     const height = src.height;
     const depthOrArrayLayers = src.depthOrArrayLayers;
-    const usage = src.usage | GPUTextureUsage.RENDER_TARGET | GPUTextureUsage.COPY_SRC;
+    const usage = src.usage | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
     const size = [width, height, depthOrArrayLayers];
     format = format || "r32float";
 
@@ -130,7 +136,7 @@ export class TextureUtils {
     const width = src.width;
     const height = src.height;
     const format = src.format;
-    const usage = src.usage | GPUTextureUsage.RENDER_TARGET | GPUTextureUsage.COPY_SRC;
+    const usage = src.usage | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC;
     const size = [width, height, 1]
     const dst = this.device.createTexture({ format, size, usage });
 
@@ -317,6 +323,11 @@ export class TextureUtils {
           {
             binding: 0,
             visibility: GPUShaderStage.FRAGMENT,
+            sampler: { type: "comparison" },
+          },
+          {
+            binding: 1,
+            visibility: GPUShaderStage.FRAGMENT,
             texture: { sampleType: "depth" },
           }
         ]
@@ -354,7 +365,9 @@ export class TextureUtils {
 
     const bindGroup = this.device.createBindGroup({
       layout: sampleCount > 1 ? this.depthToFloatBindGroupMSLayout : this.depthToFloatBindGroupLayout,
-      entries: [ { binding: 0, resource: fromTextureView } ],
+      entries: sampleCount > 1
+        ? [ { binding: 0, resource: fromTextureView } ]
+        : [ { binding: 0, resource: this.depthCompareSampler }, { binding: 1, resource: fromTextureView } ],
     });
 
     const doSubmit = !commandEncoder;
@@ -714,14 +727,22 @@ TextureUtils.depthToFloatShader = `
     return output;;
   }
 
-  @binding(0) @group(0) var depth: texture_depth_2d;
+  @binding(0) @group(0) var depthSampler: sampler_comparison;
+  @binding(1) @group(0) var depth: texture_depth_2d;
   @fragment
-  fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-    var depthSize = textureDimensions(depth);
-    var coords = vec2<i32>(i32(f32(depthSize.x) * input.uv.x),
-                           i32(f32(depthSize.y) * input.uv.y));
-    var d = textureLoad(depth, coords, 0);
-    return vec4f(d, 0.0, 0.0, 1.0);
+  fn fragmentMain(input: VertexOutput) -> @location(0) f32 {
+    var lo = 0.0;
+    var hi = 1.0;
+    for (var i = 0; i < 16; i++) {
+      let mid = (lo + hi) * 0.5;
+      let compare = textureSampleCompare(depth, depthSampler, input.uv, mid);
+      if (compare > 0.5) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
   }`;
 
 TextureUtils.depthToFloatMultisampleShader = `
@@ -743,10 +764,10 @@ TextureUtils.depthToFloatMultisampleShader = `
 
   @binding(0) @group(0) var depth: texture_depth_multisampled_2d;
   @fragment
-  fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+  fn fragmentMain(input: VertexOutput) -> @location(0) f32 {
     var depthSize = textureDimensions(depth);
     var coords = vec2<i32>(i32(f32(depthSize.x) * input.uv.x),
                            i32(f32(depthSize.y) * input.uv.y));
     var d = textureLoad(depth, coords, 0);
-    return vec4f(d, 0.0, 0.0, 1.0);
+    return d;
   }`;
