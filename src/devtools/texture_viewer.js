@@ -270,6 +270,9 @@ export class TextureViewer extends Div {
     this.panel.textureUtils.blitTexture(srcView, texture.format, 1, canvasTexture.createView(), format,
         texture.display, texture.descriptor.dimension, (layer / texture.depthOrArrayLayers) + hl,
         skipMinMax ? null : (minRange, maxRange) => {
+          if (texture.usesGlobalLayerRange) {
+            return;
+          }
           texture._layerRanges = texture._layerRanges || [];
           texture._layerRanges[layer] = { min: minRange, max: maxRange };
           if (layerTitle) {
